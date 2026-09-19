@@ -494,9 +494,9 @@ class Cql2ElmVisitor(
                                 .withExpression(
                                     of.createSingletonFrom().withOperand(contextRetrieve)
                                 )
-                        track(modelContextDefinition, ctx)
                         modelContextDefinition.expression!!.resultType = contextType
                         modelContextDefinition.resultType = contextType
+                        track(modelContextDefinition, ctx)
                         libraryBuilder.addExpression(modelContextDefinition)
                         this.contextDefinitions[modelContext.name] = modelContextDefinition
                     }
@@ -506,11 +506,11 @@ class Cql2ElmVisitor(
                             .withName(unqualifiedIdentifier)
                             .withContext(this.currentContext)
                             .withExpression(of.createNull())
-                    track(modelContextDefinition, ctx)
                     modelContextDefinition.expression!!.resultType =
                         libraryBuilder.resolveTypeName("System", "Any")
                     modelContextDefinition.resultType =
                         modelContextDefinition.expression!!.resultType
+                    track(modelContextDefinition, ctx)
                     libraryBuilder.addExpression(modelContextDefinition)
                     this.contextDefinitions[modelContext.name] = modelContextDefinition
                 }
@@ -1061,10 +1061,21 @@ class Cql2ElmVisitor(
 
     override fun visitQuantity(ctx: QuantityContext): Expression {
         return if (ctx.unit() != null) {
-            libraryBuilder.createQuantity(
-                parseDecimal(ctx.NUMBER().text),
-                (parseString(ctx.unit()))!!,
-            )
+            val unit = (parseString(ctx.unit()))!!
+            val quantity = libraryBuilder.createQuantity(parseDecimal(ctx.NUMBER().text), unit)
+            if (libraryBuilder.isArbitraryUnit(unit)) {
+                // WARNING:
+                libraryBuilder.recordParsingException(
+                    CqlSemanticException(
+                        "The quantity unit '$unit' is a UCUM arbitrary unit, whose meaning depends " +
+                            "on the measurement procedure and is not comparable across contexts. " +
+                            "Ensure that any comparison involving this unit is appropriate.",
+                        getTrackBack(ctx),
+                        CqlCompilerException.ErrorSeverity.Warning,
+                    )
+                )
+            }
+            quantity
         } else {
             libraryBuilder.createNumberLiteral(ctx.NUMBER().text)
         }
@@ -4538,6 +4549,10 @@ class Cql2ElmVisitor(
         }
     }
 
+    /**
+     * Adds trackbacks, locator, `resultTypeName`/`resultTypeSpecifier` to the ELM [Element]. For
+     * result types to be added to ELM, make sure this is called after [Element.resultType] is set.
+     */
     private fun track(trackable: Element?, pt: ParseTree): TrackBack? {
         val tb = getTrackBack(pt)
         if (tb != null) {
