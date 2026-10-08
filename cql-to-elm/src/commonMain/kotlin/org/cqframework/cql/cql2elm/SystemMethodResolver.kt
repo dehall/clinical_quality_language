@@ -141,7 +141,13 @@ class SystemMethodResolver(
                 isExpression.isTypeSpecifier = builder.dataTypeToTypeSpecifier(isType)
             }
             isExpression.resultType = builder.resolveTypeName("System", "Boolean")
-            createQuery(source, null, isExpression, null)
+            // ofType(T) narrows the static result type to T. The `where $this is T` clause only
+            // filters at runtime; without this the query keeps the source's (choice) element type,
+            // which breaks downstream overload resolution for operators that consume the static
+            // type — Exists, Count, and type-specific property access (#1785).
+            val query = createQuery(source, null, isExpression, null)
+            query.resultType = if (isSingular) isType else isType?.let { ListType(it) }
+            query
         } finally {
             exitQueryContext()
         }
@@ -359,7 +365,7 @@ class SystemMethodResolver(
                 val dataTypes: MutableSet<DataType> = HashSet()
                 gatherChildTypes(target.resultType!!, true, dataTypes)
                 if (dataTypes.size == 1) {
-                    descendents.resultType = ListType(dataTypes.toTypedArray()[0])
+                    descendents.resultType = ListType(dataTypes.first())
                 } else {
                     descendents.resultType = ListType(ChoiceType(dataTypes))
                 }
@@ -372,7 +378,7 @@ class SystemMethodResolver(
                 val dataTypes: MutableSet<DataType> = HashSet()
                 gatherChildTypes(target.resultType!!, true, dataTypes)
                 if (dataTypes.size == 1) {
-                    descendants.resultType = ListType(dataTypes.toTypedArray()[0])
+                    descendants.resultType = ListType(dataTypes.first())
                 } else {
                     descendants.resultType = ListType(ChoiceType(dataTypes))
                 }
